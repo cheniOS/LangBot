@@ -1,0 +1,20 @@
+# ==============================================================================
+# Caddyfile - Automatic HTTPS config for LangBot
+# ==============================================================================
+
+# Caddy will automatically manage SSL certificates using Let's Encrypt.
+# Please ensure DNS A record points to your server IP.
+
+webot.chediandata.top {
+    # Reverse proxy to the main LangBot container Web UI port
+    reverse_proxy langbot:5300
+
+    # Compress traffic
+    encode gzip
+
+    # Log access in JSON format
+    log {
+        output stdout
+        format json
+    }
+}

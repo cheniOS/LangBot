@@ -1,0 +1,80 @@
+# ==============================================================================
+# Docker Compose configuration for LangBot with Caddy HTTPS Reverse Proxy
+# ==============================================================================
+
+services:
+  # The main LangBot orchestrator service
+  langbot:
+    image: rockchin/langbot:latest
+    container_name: langbot
+    restart: always
+    volumes:
+      - ./docker/data:/app/data
+    environment:
+      - TZ=Asia/Shanghai
+      # Environment overrides for the Box sandboxed execution environment
+      - BOX__LOCAL__HOST_ROOT=${LANGBOT_BOX_ROOT:-${PWD}/docker/data/box}
+      - BOX__LOCAL__DEFAULT_WORKSPACE=default
+      - BOX__LOCAL__SKILLS_ROOT=skills
+      - BOX__LOCAL__ALLOWED_MOUNT_ROOTS=${LANGBOT_BOX_ROOT:-${PWD}/docker/data/box}
+    ports:
+      # We map 5300 locally so that Caddy can proxy it securely, keeping public access restricted
+      - "127.0.0.1:5300:5300"
+      - "2280-2285:2280-2285"  # For platform reverse connections
+    networks:
+      - langbot_network
+
+  # Plugin runtime environment for LangBot
+  langbot_plugin_runtime:
+    image: rockchin/langbot:latest
+    container_name: langbot_plugin_runtime
+    restart: always
+    volumes:
+      - ./docker/data/plugins:/app/data/plugins
+    ports:
+      - "127.0.0.1:5401:5401"
+    environment:
+      - TZ=Asia/Shanghai
+    command: ["uv", "run", "--no-sync", "-m", "langbot_plugin.cli.__init__", "rt"]
+    networks:
+      - langbot_network
+
+  # Sandbox box environment for isolating skills and tools execution
+  langbot_box:
+    image: rockchin/langbot:latest
+    container_name: langbot_box
+    profiles: ["box", "all"]
+    restart: always
+    volumes:
+      - ${LANGBOT_BOX_ROOT:-${PWD}/docker/data/box}:${LANGBOT_BOX_ROOT:-${PWD}/docker/data/box}
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - TZ=Asia/Shanghai
+    command: ["uv", "run", "--no-sync", "-m", "langbot_plugin.cli.__init__", "box"]
+    networks:
+      - langbot_network
+
+  # Caddy reverse proxy for securing web traffic and automatic SSL certificates
+  caddy:
+    image: caddy:latest
+    container_name: caddy
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - langbot_network
+    depends_on:
+      - langbot
+
+networks:
+  langbot_network:
+    driver: bridge
+
+volumes:
+  caddy_data:
+  caddy_config:
